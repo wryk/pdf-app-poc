@@ -4,20 +4,25 @@
 	import { PDFDocument } from 'pdf-lib'
 	import { v4 as uuid } from 'uuid'
 	import { dndzone } from 'svelte-dnd-action'
-	import * as util from './util.js'
+	import * as util from './util.ts'
 	import Page from './Page.svelte'
 
-	const documentType = 'application/pdf'
-	const allowedTypes = [documentType]
+	const pdfType = 'application/pdf'
+	const jpegType = 'image/jpeg'
+	const pngType = 'image/png'
+
+	const imageTypes = [jpegType, pngType]
+	const allTypes = [pdfType, ...imageTypes]
 
 	let pages = []
 
-	const handleNewFiles = async event => {
+	const handleNewFiles = async (event: svelte.JSX.EventHandler<Event, HTMLInputElement>) => {
 		const files = Array.from(event.target.files)
-			.filter(file => file.type === documentType)
+			.filter(file => allTypes.includes(file.type))
 
 		for (const file of files) {
-			if (file.type === documentType) {
+			console.log(file.type)
+			if (file.type === pdfType) {
 				const pdfLibDocument = await PDFDocument.load(await file.arrayBuffer())
 
 
@@ -28,6 +33,40 @@
 						previewUrl: await util.pdfLibPageToPngDataUrl(pdfLibPage)
 					})
 				}
+			} else if (imageTypes.includes(file.type)) {
+				const pdfLibDocument = await PDFDocument.create()
+				const pdfLibPage = pdfLibDocument.addPage()
+
+				const imageBytes = await file.arrayBuffer()
+
+				const pdfLibImage = await (() => {
+					switch (file.type) {
+						default: throw new Error()
+						case jpegType: return pdfLibDocument.embedJpg(imageBytes)
+						case pngType: return pdfLibDocument.embedPng(imageBytes)
+					}
+				})()
+
+				const scaledCentered = (pdfLibImage, pdfLibPage) => {
+					const width = pdfLibPage.getWidth()
+					const height = pdfLibPage.getHeight()
+
+					const scaled = pdfLibImage.scaleToFit(width, height)
+
+					return {
+						x: (width - scaled.width) / 2,
+						y: (height - scaled.height) / 2,
+						...scaled
+					}
+				}
+
+				pdfLibPage.drawImage(pdfLibImage, scaledCentered(pdfLibImage, pdfLibPage))
+
+				addPage({
+					id: uuid(),
+					pdfLibPage: pdfLibPage,
+					previewUrl: await util.pdfLibPageToPngDataUrl(pdfLibPage)
+				})
 			} else {
 				throw new Error('No.')
 			}
@@ -91,7 +130,7 @@
 </script>
 
 <main>
-	<input type="file" multiple accept={allowedTypes.join(',')} on:change={handleNewFiles}/>
+	<input type="file" multiple accept={allTypes.join(',')} on:change={handleNewFiles}/>
 
 	<div>
 		<p>Pages : {pages.length}</p>
